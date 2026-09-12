@@ -19,11 +19,11 @@ var (
 )
 
 type config struct {
-	Application application `yaml:"application"`
-	Domain      domains     `yaml:"domain"`
-	Resources   *resources  `yaml:"resources,omitempty"`
-	Modules     *modules    `yaml:"modules,omitempty"`
-	Volume      *volume     `yaml:"volume,omitempty"`
+	Application  application            `yaml:"application"`
+	Environments map[string]environment `yaml:"environments"`
+	Resources    *resources             `yaml:"resources,omitempty"`
+	Modules      moduleSet              `yaml:"modules,omitempty"`
+	Volume       *volume                `yaml:"volume,omitempty"`
 }
 
 type application struct {
@@ -32,9 +32,10 @@ type application struct {
 	HealthPath string `yaml:"healthPath"`
 }
 
-type domains struct {
-	Production string `yaml:"production"`
-	Staging    string `yaml:"staging"`
+type environment struct {
+	Domain  string    `yaml:"domain"`
+	NoIndex bool      `yaml:"noIndex,omitempty"`
+	Modules moduleSet `yaml:"modules,omitempty"`
 }
 
 type volume struct {
@@ -46,16 +47,10 @@ type resources struct {
 	Memory int `yaml:"memory"`
 }
 
-type modules struct {
-	Config moduleScope `yaml:"config,omitempty"`
-	Group  moduleScope `yaml:"group,omitempty"`
-	Task   moduleScope `yaml:"task,omitempty"`
-}
-
-type moduleScope struct {
-	Common     []string `yaml:"common,omitempty"`
-	Production []string `yaml:"production,omitempty"`
-	Staging    []string `yaml:"staging,omitempty"`
+type moduleSet struct {
+	Config []string `yaml:"config,omitempty"`
+	Group  []string `yaml:"group,omitempty"`
+	Task   []string `yaml:"task,omitempty"`
 }
 
 func load(path string) (config, error) {
@@ -118,16 +113,24 @@ func (value config) validate() error {
 func (value config) githubOutput() {
 	fmt.Printf("name=%s\n", value.Application.Name)
 	fmt.Printf("health_path=%s\n", value.Application.HealthPath)
-	fmt.Printf("staging_domain=%s\n", value.Domain.Staging)
-	fmt.Printf("production_domain=%s\n", value.Domain.Production)
 	fmt.Printf("volume_enabled=%t\n", value.Volume != nil)
 }
 
-func (value config) nomadVars(environment, image string) error {
-	domain, err := value.domain(environment)
-	if err != nil {
-		return err
+func (value config) environmentOutput(name string) error {
+	environment, ok := value.Environments[name]
+	if !ok {
+		return fmt.Errorf("environment %q is not declared", name)
 	}
+	fmt.Printf("domain=%s\n", environment.Domain)
+	return nil
+}
+
+func (value config) nomadVars(environment, image string) error {
+	environmentConfig, ok := value.Environments[environment]
+	if !ok {
+		return fmt.Errorf("environment %q is not declared", environment)
+	}
+	domain := environmentConfig.Domain
 	if !digestPattern.MatchString(image) {
 		return errors.New("image must be an immutable GHCR SHA-256 digest")
 	}
@@ -140,7 +143,7 @@ func (value config) nomadVars(environment, image string) error {
 		fmt.Sprintf("traefik.http.routers.%s.tls.certresolver=cloudflare", router),
 		fmt.Sprintf("traefik.http.routers.%s.tls.domains[0].main=%s", router, domain),
 	}
-	if environment == "staging" {
+	if environmentConfig.NoIndex {
 		tags = append(tags,
 			fmt.Sprintf("traefik.http.routers.%s.middlewares=%s-noindex", router, router),
 			fmt.Sprintf("traefik.http.middlewares.%s-noindex.headers.customresponseheaders.X-Robots-Tag=noindex, nofollow", router),
@@ -159,9 +162,9 @@ func (value config) nomadVars(environment, image string) error {
 		{"port", value.Application.Port},
 		{"resource_cpu", value.resourceCPU()},
 		{"resource_memory", value.resourceMemory()},
-		{"config_modules", value.modulePaths(value.moduleScope("config"), environment)},
-		{"group_modules", value.modulePaths(value.moduleScope("group"), environment)},
-		{"task_modules", value.modulePaths(value.moduleScope("task"), environment)},
+		{"config_modules", append(value.Modules.Config, environmentConfig.Modules.Config...)},
+		{"group_modules", append(value.Modules.Group, environmentConfig.Modules.Group...)},
+		{"task_modules", append(value.Modules.Task, environmentConfig.Modules.Task...)},
 		{"service_tags", tags},
 		{"volume_enabled", value.Volume != nil},
 		{"volume_mount_path", value.volumeMountPath()},
@@ -175,28 +178,6 @@ func (value config) nomadVars(environment, image string) error {
 		fmt.Printf("%s = %s\n", entry.name, encoded)
 	}
 	return nil
-}
-
-func (value config) moduleScope(name string) moduleScope {
-	if value.Modules == nil {
-		return moduleScope{}
-	}
-	switch name {
-	case "config":
-		return value.Modules.Config
-	case "group":
-		return value.Modules.Group
-	default:
-		return value.Modules.Task
-	}
-}
-
-func (value config) modulePaths(scope moduleScope, environment string) []string {
-	paths := append([]string{}, scope.Common...)
-	if environment == "staging" {
-		return append(paths, scope.Staging...)
-	}
-	return append(paths, scope.Production...)
 }
 
 func (value config) resourceCPU() int {
@@ -225,8 +206,8 @@ func (value config) volumeName(environment string) string {
 }
 
 func (value config) volumeSpec(environment string) error {
-	if _, err := value.domain(environment); err != nil {
-		return err
+	if _, ok := value.Environments[environment]; !ok {
+		return fmt.Errorf("environment %q is not declared", environment)
 	}
 	if value.Volume == nil {
 		return errors.New("application.yaml does not declare a volume")
@@ -243,17 +224,6 @@ func (value config) volumeSpec(environment string) error {
 	return nil
 }
 
-func (value config) domain(environment string) (string, error) {
-	switch environment {
-	case "staging":
-		return value.Domain.Staging, nil
-	case "production":
-		return value.Domain.Production, nil
-	default:
-		return "", errors.New("environment must be staging or production")
-	}
-}
-
 func run(args []string) error {
 	value, err := load("application.yaml")
 	if err != nil {
@@ -266,13 +236,16 @@ func run(args []string) error {
 		value.githubOutput()
 		return nil
 	}
+	if args[0] == "environment-output" && len(args) == 2 {
+		return value.environmentOutput(args[1])
+	}
 	if args[0] == "nomad-vars" && len(args) == 3 {
 		return value.nomadVars(args[1], args[2])
 	}
 	if args[0] == "volume-spec" && len(args) == 2 {
 		return value.volumeSpec(args[1])
 	}
-	return errors.New("usage: deployment-config {validate|github-output|nomad-vars ENV IMAGE|volume-spec ENV}")
+	return errors.New("usage: application-contract {validate|github-output|environment-output ENV|nomad-vars ENV IMAGE|volume-spec ENV}")
 }
 
 func main() {
