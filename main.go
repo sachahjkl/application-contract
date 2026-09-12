@@ -21,6 +21,8 @@ var (
 type config struct {
 	Application application `yaml:"application"`
 	Domain      domains     `yaml:"domain"`
+	Resources   *resources  `yaml:"resources,omitempty"`
+	Modules     *modules    `yaml:"modules,omitempty"`
 	Volume      *volume     `yaml:"volume,omitempty"`
 }
 
@@ -37,6 +39,23 @@ type domains struct {
 
 type volume struct {
 	MountPath string `yaml:"mountPath"`
+}
+
+type resources struct {
+	CPU    int `yaml:"cpu"`
+	Memory int `yaml:"memory"`
+}
+
+type modules struct {
+	Config      moduleScope `yaml:"config,omitempty"`
+	Group       moduleScope `yaml:"group,omitempty"`
+	Task        moduleScope `yaml:"task,omitempty"`
+}
+
+type moduleScope struct {
+	Common     []string `yaml:"common,omitempty"`
+	Production []string `yaml:"production,omitempty"`
+	Staging    []string `yaml:"staging,omitempty"`
 }
 
 func load(path string) (config, error) {
@@ -90,6 +109,9 @@ func (value config) validate() error {
 			return errors.New("volume.mountPath must be a clean absolute path below /")
 		}
 	}
+	if value.Resources != nil && (value.Resources.CPU < 1 || value.Resources.Memory < 1) {
+		return errors.New("resources.cpu and resources.memory must be positive integers")
+	}
 	return nil
 }
 
@@ -135,6 +157,11 @@ func (value config) nomadVars(environment, image string) error {
 		{"health_path", value.Application.HealthPath},
 		{"image", image},
 		{"port", value.Application.Port},
+		{"resource_cpu", value.resourceCPU()},
+		{"resource_memory", value.resourceMemory()},
+		{"config_modules", value.modulePaths(value.moduleScope("config"), environment)},
+		{"group_modules", value.modulePaths(value.moduleScope("group"), environment)},
+		{"task_modules", value.modulePaths(value.moduleScope("task"), environment)},
 		{"service_tags", tags},
 		{"volume_enabled", value.Volume != nil},
 		{"volume_mount_path", value.volumeMountPath()},
@@ -148,6 +175,42 @@ func (value config) nomadVars(environment, image string) error {
 		fmt.Printf("%s = %s\n", entry.name, encoded)
 	}
 	return nil
+}
+
+func (value config) moduleScope(name string) moduleScope {
+	if value.Modules == nil {
+		return moduleScope{}
+	}
+	switch name {
+	case "config":
+		return value.Modules.Config
+	case "group":
+		return value.Modules.Group
+	default:
+		return value.Modules.Task
+	}
+}
+
+func (value config) modulePaths(scope moduleScope, environment string) []string {
+	paths := append([]string{}, scope.Common...)
+	if environment == "staging" {
+		return append(paths, scope.Staging...)
+	}
+	return append(paths, scope.Production...)
+}
+
+func (value config) resourceCPU() int {
+	if value.Resources == nil {
+		return 200
+	}
+	return value.Resources.CPU
+}
+
+func (value config) resourceMemory() int {
+	if value.Resources == nil {
+		return 256
+	}
+	return value.Resources.Memory
 }
 
 func (value config) volumeMountPath() string {
