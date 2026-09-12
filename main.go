@@ -15,7 +15,6 @@ import (
 
 var (
 	namePattern   = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
-	domainPattern = regexp.MustCompile(`^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$`)
 	digestPattern = regexp.MustCompile(`^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+@sha256:[0-9a-f]{64}$`)
 )
 
@@ -84,17 +83,6 @@ func (value config) validate() error {
 	}
 	if !strings.HasPrefix(value.Application.HealthPath, "/") {
 		return errors.New("application.healthPath must start with /")
-	}
-	for environment, domain := range map[string]string{
-		"production": value.Domain.Production,
-		"staging":    value.Domain.Staging,
-	} {
-		if len(domain) > 253 || !domainPattern.MatchString(domain) {
-			return fmt.Errorf("domain.%s must be a valid lowercase domain", environment)
-		}
-	}
-	if value.Domain.Production == value.Domain.Staging {
-		return errors.New("staging and production domains must be different")
 	}
 	if value.Volume != nil {
 		mountPath := value.Volume.MountPath
