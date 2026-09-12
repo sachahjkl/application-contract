@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"sort"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -107,6 +108,17 @@ func (value config) validate() error {
 	if value.Resources != nil && (value.Resources.CPU < 1 || value.Resources.Memory < 1) {
 		return errors.New("resources.cpu and resources.memory must be positive integers")
 	}
+	if len(value.Environments) == 0 {
+		return errors.New("environments must declare at least one environment")
+	}
+	for name, environment := range value.Environments {
+		if !namePattern.MatchString(name) {
+			return fmt.Errorf("environment name %q must be a lowercase DNS label", name)
+		}
+		if environment.Domain == "" {
+			return fmt.Errorf("environment %q must declare a domain", name)
+		}
+	}
 	return nil
 }
 
@@ -122,7 +134,19 @@ func (value config) environmentOutput(name string) error {
 		return fmt.Errorf("environment %q is not declared", name)
 	}
 	fmt.Printf("domain=%s\n", environment.Domain)
+	fmt.Printf("no_index=%t\n", environment.NoIndex)
 	return nil
+}
+
+func (value config) environmentNames() {
+	names := make([]string, 0, len(value.Environments))
+	for name := range value.Environments {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		fmt.Println(name)
+	}
 }
 
 func (value config) nomadVars(environment, image string) error {
@@ -245,13 +269,17 @@ func run(args []string) error {
 	if args[0] == "environment-output" && len(args) == 2 {
 		return value.environmentOutput(args[1])
 	}
+	if args[0] == "environment-names" && len(args) == 1 {
+		value.environmentNames()
+		return nil
+	}
 	if args[0] == "nomad-vars" && len(args) == 3 {
 		return value.nomadVars(args[1], args[2])
 	}
 	if args[0] == "volume-spec" && len(args) == 2 {
 		return value.volumeSpec(args[1])
 	}
-	return errors.New("usage: application-contract {validate|github-output|environment-output ENV|nomad-vars ENV IMAGE|volume-spec ENV}")
+	return errors.New("usage: application-contract {validate|github-output|environment-names|environment-output ENV|nomad-vars ENV IMAGE|volume-spec ENV}")
 }
 
 func main() {
