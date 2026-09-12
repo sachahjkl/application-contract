@@ -17,7 +17,6 @@ var (
 	namePattern   = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
 	domainPattern = regexp.MustCompile(`^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$`)
 	digestPattern = regexp.MustCompile(`^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+@sha256:[0-9a-f]{64}$`)
-	allowedZones  = []string{"sacha.house", "homelab.sacha.house", "froment.software"}
 )
 
 type config struct {
@@ -93,9 +92,6 @@ func (value config) validate() error {
 		if len(domain) > 253 || !domainPattern.MatchString(domain) {
 			return fmt.Errorf("domain.%s must be a valid lowercase domain", environment)
 		}
-		if !trustedDomain(domain) {
-			return fmt.Errorf("domain.%s is outside the trusted domain zones", environment)
-		}
 	}
 	if value.Domain.Production == value.Domain.Staging {
 		return errors.New("staging and production domains must be different")
@@ -107,15 +103,6 @@ func (value config) validate() error {
 		}
 	}
 	return nil
-}
-
-func trustedDomain(domain string) bool {
-	for _, zone := range allowedZones {
-		if domain == zone || strings.HasSuffix(domain, "."+zone) {
-			return true
-		}
-	}
-	return false
 }
 
 func (value config) githubOutput() {
