@@ -47,9 +47,9 @@ type resources struct {
 }
 
 type modules struct {
-	Config      moduleScope `yaml:"config,omitempty"`
-	Group       moduleScope `yaml:"group,omitempty"`
-	Task        moduleScope `yaml:"task,omitempty"`
+	Config moduleScope `yaml:"config,omitempty"`
+	Group  moduleScope `yaml:"group,omitempty"`
+	Task   moduleScope `yaml:"task,omitempty"`
 }
 
 type moduleScope struct {
