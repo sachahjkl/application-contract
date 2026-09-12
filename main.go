@@ -162,9 +162,9 @@ func (value config) nomadVars(environment, image string) error {
 		{"port", value.Application.Port},
 		{"resource_cpu", value.resourceCPU()},
 		{"resource_memory", value.resourceMemory()},
-		{"config_modules", append(value.Modules.Config, environmentConfig.Modules.Config...)},
-		{"group_modules", append(value.Modules.Group, environmentConfig.Modules.Group...)},
-		{"task_modules", append(value.Modules.Task, environmentConfig.Modules.Task...)},
+		{"config_modules", combine(value.Modules.Config, environmentConfig.Modules.Config)},
+		{"group_modules", combine(value.Modules.Group, environmentConfig.Modules.Group)},
+		{"task_modules", combine(value.Modules.Task, environmentConfig.Modules.Task)},
 		{"service_tags", tags},
 		{"volume_enabled", value.Volume != nil},
 		{"volume_mount_path", value.volumeMountPath()},
@@ -178,6 +178,12 @@ func (value config) nomadVars(environment, image string) error {
 		fmt.Printf("%s = %s\n", entry.name, encoded)
 	}
 	return nil
+}
+
+func combine(common, environment []string) []string {
+	result := make([]string, 0, len(common)+len(environment))
+	result = append(result, common...)
+	return append(result, environment...)
 }
 
 func (value config) resourceCPU() int {
