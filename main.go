@@ -111,15 +111,36 @@ func (value config) validate() error {
 	if len(value.Environments) == 0 {
 		return errors.New("environments must declare at least one environment")
 	}
+	domains := make(map[string]string, len(value.Environments))
 	for name, environment := range value.Environments {
 		if !namePattern.MatchString(name) {
 			return fmt.Errorf("environment name %q must be a lowercase DNS label", name)
 		}
-		if environment.Domain == "" {
-			return fmt.Errorf("environment %q must declare a domain", name)
+		if !validDomain(environment.Domain) {
+			return fmt.Errorf("environment %q domain must be a lowercase DNS hostname", name)
 		}
+		if other, exists := domains[environment.Domain]; exists {
+			return fmt.Errorf("environments %q and %q cannot use the same domain", other, name)
+		}
+		domains[environment.Domain] = name
 	}
 	return nil
+}
+
+func validDomain(domain string) bool {
+	if len(domain) == 0 || len(domain) > 253 || strings.HasSuffix(domain, ".") {
+		return false
+	}
+	labels := strings.Split(domain, ".")
+	if len(labels) < 2 {
+		return false
+	}
+	for _, label := range labels {
+		if !namePattern.MatchString(label) {
+			return false
+		}
+	}
+	return true
 }
 
 func (value config) githubOutput() {
