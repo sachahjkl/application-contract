@@ -18,7 +18,7 @@
     pkgs = import nixpkgs {inherit system;};
     applicationContract = pkgs.buildGoModule {
       pname = "application-contract";
-      version = "1.0.0";
+      version = "2.2.1";
       src = ./.;
       vendorHash = "sha256-QE/EwVzMqUO24ZAl0WBibGx6x0kNo1AUTZtfnQvX50k=";
     };
