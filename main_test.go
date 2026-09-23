@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -13,6 +14,43 @@ func TestVolumeName(t *testing.T) {
 	value := config{Application: application{Name: "example"}}
 	if name := value.volumeName("production"); name != "example-production-data" {
 		t.Errorf("volumeName() = %q", name)
+	}
+}
+
+func TestVolumeOwnership(t *testing.T) {
+	uid, gid := 1000, 1000
+	value := config{
+		Application:  application{Name: "example", Port: 3000, HealthPath: "/health"},
+		Environments: map[string]environment{"demo": {Domain: "example.com"}},
+		Volume:       &volume{MountPath: "/data", UID: &uid, GID: &gid},
+	}
+	if err := value.validate(); err != nil {
+		t.Fatal(err)
+	}
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout := os.Stdout
+	os.Stdout = write
+	t.Cleanup(func() { os.Stdout = stdout })
+	if err := value.volumeSpec("demo"); err != nil {
+		t.Fatal(err)
+	}
+	if err := write.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if _, err := io.Copy(&output, read); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), `parameters = { mode = "0700", uid = 1000, gid = 1000 }`) {
+		t.Errorf("volumeSpec() omitted the requested ownership: %s", output.String())
+	}
+	negative := -1
+	value.Volume.UID = &negative
+	if err := value.validate(); err == nil {
+		t.Fatal("validate() accepted a negative uid")
 	}
 }
 

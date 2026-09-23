@@ -41,6 +41,8 @@ type environment struct {
 
 type volume struct {
 	MountPath string `yaml:"mountPath"`
+	UID       *int   `yaml:"uid,omitempty"`
+	GID       *int   `yaml:"gid,omitempty"`
 }
 
 type resources struct {
@@ -103,6 +105,12 @@ func (value config) validate() error {
 		mountPath := value.Volume.MountPath
 		if !strings.HasPrefix(mountPath, "/") || path.Clean(mountPath) != mountPath || mountPath == "/" {
 			return errors.New("volume.mountPath must be a clean absolute path below /")
+		}
+		if (value.Volume.UID == nil) != (value.Volume.GID == nil) {
+			return errors.New("volume.uid and volume.gid must be set together")
+		}
+		if value.Volume.UID != nil && (*value.Volume.UID < 0 || *value.Volume.GID < 0) {
+			return errors.New("volume.uid and volume.gid must be nonnegative")
 		}
 	}
 	if value.Resources != nil && (value.Resources.CPU < 1 || value.Resources.Memory < 1) {
@@ -267,7 +275,11 @@ func (value config) volumeSpec(environment string) error {
 	fmt.Printf("name = %q\n", value.volumeName(environment))
 	fmt.Println("type = \"host\"")
 	fmt.Println("plugin_id = \"mkdir\"")
-	fmt.Println("parameters = { mode = \"0700\" }")
+	if value.Volume.UID == nil {
+		fmt.Println("parameters = { mode = \"0700\" }")
+	} else {
+		fmt.Printf("parameters = { mode = \"0700\", uid = %d, gid = %d }\n", *value.Volume.UID, *value.Volume.GID)
+	}
 	fmt.Println("capability {")
 	fmt.Println("  access_mode = \"single-node-writer\"")
 	fmt.Println("  attachment_mode = \"file-system\"")
