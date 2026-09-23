@@ -1,0 +1,2 @@
+name=Application Contract
+description=A Go CLI that defines and validates the application.yaml deployment contract used by homelab applications.
