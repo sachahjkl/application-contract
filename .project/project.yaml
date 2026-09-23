@@ -1,0 +1,16 @@
+name: "Application Contract"
+description: "A Go CLI that defines and validates the application.yaml deployment contract used by homelab applications."
+topics:
+  - "application-contract"
+  - "yaml"
+  - "validation"
+  - "deployment"
+  - "nomad"
+  - "homelab"
+  - "go"
+  - "nix"
+homepage: ""
+source:
+  provider: github
+  namespace: "sachahjkl"
+  path: "sachahjkl/application-contract"
